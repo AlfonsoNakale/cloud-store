@@ -1,32 +1,20 @@
 import { defineConfig } from 'vite'
-import eslintPlugin from 'vite-plugin-eslint'
+import eslint from 'vite-plugin-eslint'
 
-// vite.config.js
 export default defineConfig({
-  plugins: [eslintPlugin({ cache: false })],
-  server: {
-    host: 'localhost',
-    cors: '*',
-    hmr: {
-      host: 'localhost',
-      protocol: 'ws',
-    },
-  },
+  plugins: [eslint()],
   build: {
-    minify: true,
-    manifest: true,
     rollupOptions: {
-      input: './src/main.js',
       output: {
-        format: 'umd',
-        entryFileNames: 'main.js',
-        esModule: false,
-        compact: true,
-        globals: {
-          jquery: '$',
-        },
+        format: 'es',
+        entryFileNames: '[name].[hash].js',
+        chunkFileNames: '[name].[hash].js',
+        assetFileNames: '[name].[hash].[ext]',
       },
-      external: ['jquery'],
     },
+    target: 'es2015',
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
   },
 })
