@@ -2,7 +2,6 @@ import { DOM_IDS } from './constants.js'
 
 class UIManager {
   constructor() {
-    // Get DOM elements
     this.elements = {}
     Object.entries(DOM_IDS).forEach(([key, id]) => {
       this.elements[key] = document.getElementById(id)
@@ -12,46 +11,123 @@ class UIManager {
   }
 
   initializeUI() {
-    // Set initial states
-    this.elements.uploadLoader.style.display = 'none'
-    this.elements.defaultFileItem.style.display = 'none'
-    this.elements.emptyPlaceholder.style.display = 'flex'
-    this.elements.emptyStateIcon.style.display = 'block'
-    this.elements.fullStateIcon.style.display = 'none'
-    this.elements.maxErrorElement.style.display = 'none'
+    // Set initial states only for elements that exist
+    if (this.elements.uploadLoader) {
+      this.elements.uploadLoader.style.display = 'none'
+    }
 
-    // Enable multiple file selection
-    this.elements.fileInput.setAttribute('multiple', 'true')
+    if (this.elements.defaultFileItem) {
+      this.elements.defaultFileItem.style.display = 'none'
+    }
+
+    if (this.elements.emptyPlaceholder) {
+      this.elements.emptyPlaceholder.style.display = 'flex'
+    }
+
+    if (this.elements.emptyStateIcon) {
+      this.elements.emptyStateIcon.style.display = 'block'
+    }
+
+    if (this.elements.fullStateIcon) {
+      this.elements.fullStateIcon.style.display = 'none'
+    }
+
+    if (this.elements.maxErrorElement) {
+      this.elements.maxErrorElement.style.display = 'none'
+    }
+
+    // Enable multiple file selection if input exists
+    if (this.elements.fileInput) {
+      this.elements.fileInput.setAttribute('multiple', 'true')
+    }
   }
 
   updateFileList(uploadedFiles) {
-    const items = this.elements.fileList.querySelectorAll('[id^="a-fileItem-"]')
-    items.forEach((item) => item.remove())
+    // Get elements using the stored references
+    const fileList = this.elements.fileList
+    const emptyPlaceholder = this.elements.emptyPlaceholder
+    const defaultFileItem = this.elements.defaultFileItem
 
-    if (uploadedFiles.length === 0) {
-      this.elements.emptyPlaceholder.style.display = 'flex'
-      this.elements.defaultFileItem.style.display = 'none'
-    } else {
-      this.elements.emptyPlaceholder.style.display = 'none'
-      this.elements.defaultFileItem.style.display = 'none'
-      uploadedFiles.forEach((file, index) => {
-        const fileItem = this.createFileItem(file, index)
-        this.elements.fileList.appendChild(fileItem)
-      })
+    if (!fileList || !emptyPlaceholder || !defaultFileItem) {
+      console.warn('Required elements not found')
+      return
     }
+
+    // Clear existing file items
+    const existingItems = fileList.querySelectorAll('[id^="a-fileItem-"]')
+    existingItems.forEach((item) => item.remove())
+
+    // Handle empty state
+    if (!uploadedFiles || uploadedFiles.length === 0) {
+      emptyPlaceholder.style.display = 'flex'
+      defaultFileItem.style.display = 'none'
+      return
+    }
+
+    // Hide empty state and template
+    emptyPlaceholder.style.display = 'none'
+    defaultFileItem.style.display = 'none'
+
+    // Create and append file items
+    uploadedFiles.forEach((file, index) => {
+      const fileItem = this.createFileItemElement(file, index)
+      fileList.appendChild(fileItem)
+    })
   }
 
-  updateStateIcons(fileCount, maxFiles) {
-    if (fileCount >= maxFiles) {
-      this.elements.emptyStateIcon.style.display = 'none'
-      this.elements.fullStateIcon.style.display = 'block'
-    } else {
-      this.elements.emptyStateIcon.style.display = 'block'
-      this.elements.fullStateIcon.style.display = 'none'
+  createFileItemElement(file, index) {
+    // Clone the template
+    const template = this.elements.defaultFileItem
+    const fileItem = template.cloneNode(true)
+
+    // Set basic properties
+    fileItem.id = `a-fileItem-${index}`
+    fileItem.style.display = 'flex'
+
+    // Update file name
+    const fileNameElement = fileItem.querySelector('#a-fileName')
+    if (fileNameElement) {
+      fileNameElement.textContent = file.name
+      fileNameElement.id = `a-fileName-${index}`
     }
+
+    // Set up remove button and loader
+    const removeLoader = fileItem.querySelector('#s-removeFileLoader')
+    const removeButton = fileItem.querySelector('#s-removeFile')
+
+    if (removeLoader && removeButton) {
+      // Update IDs
+      removeLoader.id = `s-removeFileLoader-${index}`
+      removeButton.id = `s-removeFile-${index}`
+
+      // Initial state
+      removeLoader.style.display = 'none'
+      removeButton.style.display = 'block'
+
+      // Set up click handler
+      removeButton.onclick = async () => {
+        try {
+          // Show loader, hide button
+          removeLoader.style.display = 'block'
+          removeButton.style.display = 'none'
+
+          // Remove file
+          await window.removeFile(index)
+        } catch (error) {
+          console.error('Error removing file:', error)
+          // Restore button on error
+          removeLoader.style.display = 'none'
+          removeButton.style.display = 'block'
+        }
+      }
+    }
+
+    return fileItem
   }
 
   showError(message) {
+    if (!this.elements.maxErrorElement) return
+
     this.elements.maxErrorElement.textContent = message
     this.elements.maxErrorElement.style.display = 'block'
     setTimeout(() => {
@@ -59,31 +135,28 @@ class UIManager {
     }, 6000)
   }
 
-  createFileItem(file, index) {
-    const fileItem = document.createElement('div')
-    fileItem.id = `a-fileItem-${index}`
-    fileItem.className = 'file-item'
-
-    fileItem.innerHTML = `
-      <p id="a-fileName" class="paragraph">${file.name}</p>
-      <div class="div-block-2">
-        <div class="icon-embed-xsmall" onclick="window.removeFile(${index})">
-          <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24">
-            <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 14.828L12.001 12m2.828-2.828L12.001 12m0 0L9.172 9.172M12.001 12l2.828 2.828M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2S2 6.477 2 12s4.477 10 10 10"></path>
-          </svg>
-        </div>
-      </div>
-    `
-
-    return fileItem
-  }
-
   setLoading(isLoading) {
-    this.elements.uploadLoader.style.display = isLoading ? 'flex' : 'none'
+    if (this.elements.uploadLoader) {
+      this.elements.uploadLoader.style.display = isLoading ? 'flex' : 'none'
+    }
   }
 
   setFileInputEnabled(enabled) {
-    this.elements.fileInput.disabled = !enabled
+    if (this.elements.fileInput) {
+      this.elements.fileInput.disabled = !enabled
+    }
+  }
+
+  updateStateIcons(fileCount, maxFiles) {
+    if (!this.elements.emptyStateIcon || !this.elements.fullStateIcon) return
+
+    if (fileCount >= maxFiles) {
+      this.elements.emptyStateIcon.style.display = 'none'
+      this.elements.fullStateIcon.style.display = 'block'
+    } else {
+      this.elements.emptyStateIcon.style.display = 'block'
+      this.elements.fullStateIcon.style.display = 'none'
+    }
   }
 }
 

@@ -14,4 +14,7 @@ export const DOM_IDS = {
   emptyStateIcon: 's-emptyState',
   fullStateIcon: 's-fullState',
   maxErrorElement: 's-maxError',
+  removeFileLoader: 's-removeFileLoader',
+  removeFile: 's-removeFile',
+  fileName: 'a-fileName',
 }
