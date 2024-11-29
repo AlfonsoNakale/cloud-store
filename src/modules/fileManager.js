@@ -189,9 +189,19 @@ class FileManager {
                   <path d="M15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12Z" fill="#E4E6F1" stroke="#1B114A" stroke-width="1.5"/>
                 </svg>
               </a>
-              <a href="${
-                data.publicUrl
-              }" download class="intarective-icon download">
+              <a href="${data.publicUrl}" 
+                 download="${encodeURIComponent(file.name)}" 
+                 onclick="event.preventDefault(); fetch(this.href).then(res => res.blob()).then(blob => {
+                   const url = window.URL.createObjectURL(blob);
+                   const a = document.createElement('a');
+                   a.href = url;
+                   a.download = '${file.name}';
+                   document.body.appendChild(a);
+                   a.click();
+                   window.URL.revokeObjectURL(url);
+                   a.remove();
+                 })" 
+                 class="intarective-icon download">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5C16.4783 2.5 18.7175 2.5 20.1088 3.89124C21.5 5.28249 21.5 7.52166 21.5 12C21.5 16.4783 21.5 18.7175 20.1088 20.1088C18.7175 21.5 16.4783 21.5 12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12Z" fill="#E4E6F1" stroke="#1B114A" stroke-width="1.5"/>
                   <path d="M12.0025 7.03857V14.0889ZM12.0025 14.0889C12.3286 14.0933 12.6503 13.8691 12.8876 13.5956L14.4771 11.8129M12.0025 14.0889C11.6879 14.0847 11.3693 13.8618 11.1174 13.5955L9.51864 11.8129M7.98633 17.0386H15.9863Z" fill="#D9D9D9"/>
