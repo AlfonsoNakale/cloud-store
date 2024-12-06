@@ -1,1 +1,107 @@
- 
+/* Folder Styles */
+.folder-trigger {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.folder-arrow {
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.2s ease;
+}
+
+.folder-arrow.rotated {
+  transform: rotate(90deg);
+}
+
+.folder-item-wrapper {
+  padding-left: 20px;
+  display: none;
+}
+
+.folder-item-wrapper.expanded {
+  display: block;
+}
+
+.loading-placeholder {
+  display: none;
+}
+
+.loading-placeholder.visible {
+  display: block;
+}
+
+.hidden {
+  display: none;
+}
+
+.folder-item {
+  margin-bottom: 8px;
+}
+
+.file-item {
+  margin-bottom: 16px;
+}
+
+.file-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.icon-wrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.folder-content {
+  cursor: pointer;
+  position: relative;
+  padding-left: 20px;
+}
+
+.folder-content::before {
+  content: '▶';
+  position: absolute;
+  left: 0;
+  transition: transform 0.2s ease;
+}
+
+.folder.folder-open .folder-content::before {
+  transform: rotate(90deg);
+}
+
+.folder-item-wrapper {
+  padding-left: 20px;
+  display: none;
+}
+
+.folder-item-wrapper.expanded {
+  display: block;
+}
+
+.notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 15px 25px;
+  border-radius: 4px;
+  color: white;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+}
+
+.notification.success {
+  background-color: #4CAF50;
+}
+
+.notification.error {
+  background-color: #f44336;
+}
+
+.notification.info {
+  background-color: #2196F3;
+} 

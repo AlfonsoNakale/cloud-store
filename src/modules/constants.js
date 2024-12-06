@@ -17,4 +17,10 @@ export const DOM_IDS = {
   removeFileLoader: 's-removeFileLoader',
   removeFile: 's-removeFile',
   fileName: 'a-fileName',
+  folderItemWrapper: 'v-folderItemWrapper',
+  folderContent: 'v-folderContent',
+  folderName: 'v-folderName',
+  folderMetadata: 'v-folderMetadata',
+  folderCreatedAt: 'v-folderCreated_at',
+  folderDelete: 'v-FolderDelete',
 }
