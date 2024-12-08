@@ -1,12 +1,13 @@
 class UIManager {
   constructor() {
     this.elements = {
-      fileInput: document.querySelector('#v-file_input'),
-      uploadButton: document.querySelector('#v-upload_button'),
-      fileList: document.querySelector('#v-file_list'),
-      stateIcons: document.querySelector('#v-state_icons'),
-      progressBar: document.querySelector('#v-progress_bar'),
+      fileInput: document.querySelector('#v-file-input'),
+      uploadButton: document.querySelector('#v-upload-button'),
+      fileList: document.querySelector('#v-file-list'),
+      stateIcons: document.querySelector('#v-state-icons'),
+      progressBar: document.querySelector('#v-progress-bar'),
       notification: document.querySelector('#v-notification'),
+      fileContainer: document.querySelector('#file-container, .file-container'),
     }
   }
 
@@ -82,6 +83,20 @@ class UIManager {
     if (!progressBar) return
 
     progressBar.style.width = `${progress}%`
+  }
+
+  updateFolderContent(folderId, content) {
+    const folderWrapper = document.querySelector(`#folder-content-${folderId}`)
+    if (folderWrapper) {
+      folderWrapper.innerHTML = content
+    }
+  }
+
+  toggleFolderVisibility(folderId, show) {
+    const folderContent = document.querySelector(`#folder-content-${folderId}`)
+    if (folderContent) {
+      folderContent.style.display = show ? 'block' : 'none'
+    }
   }
 }
 

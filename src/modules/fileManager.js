@@ -9,10 +9,11 @@ class FileManager {
   constructor() {
     this.uploadedFiles = []
     this.isUploading = false
+    this.selectedFolder = ''
     this.initializeEventListeners()
 
     // Add global handlers
-    window.removeFile = this.removeFile.bind(this)
+    window.handleFileRemove = this.removeFile.bind(this)
     window.handleDeleteFile = this.handleDeleteFile.bind(this)
     window.handleDeleteFolder = this.handleDeleteFolder.bind(this)
     window.handleFileDownload = this.handleFileDownload.bind(this)
@@ -23,6 +24,9 @@ class FileManager {
     window.handleFolderRename = this.handleFolderRename.bind(this)
     this.urlCache = new Map()
     this.updateUIDebounced = this.debounce(this.updateUI.bind(this), 300)
+
+    // Load folders when instance is created
+    this.loadFolders()
   }
 
   initializeEventListeners() {
@@ -37,20 +41,18 @@ class FileManager {
   }
 
   setupEventListeners() {
-    const { fileInput, uploadButton } = uiManager.elements
+    const fileInput = document.querySelector('#file-input')
+    const uploadButton = document.querySelector('#uploadFile')
 
     if (fileInput) {
+      // Add multiple attribute to allow multiple file selection
+      fileInput.setAttribute('multiple', 'true')
       fileInput.addEventListener('change', this.handleFileSelection.bind(this))
     }
 
     if (uploadButton) {
       uploadButton.addEventListener('click', this.handleFileUpload.bind(this))
     }
-
-    // Global handlers
-    window.removeFile = this.removeFile.bind(this)
-    window.handleDeleteFile = this.handleDeleteFile.bind(this)
-    window.handleDeleteFolder = this.handleDeleteFolder.bind(this)
 
     // Create folder button handler
     const createFolderButton = document.querySelector('#v-create_folder')
@@ -123,16 +125,15 @@ class FileManager {
 
     // Add files and update UI
     this.uploadedFiles.push(...newFiles)
-    uiManager.updateFileList(this.uploadedFiles)
-    uiManager.updateStateIcons(this.uploadedFiles.length, MAX_FILES)
+    this.updateFileListUI()
 
     // Reset input
     event.target.value = ''
   }
 
-  async uploadFile(file, folderPath = '') {
-    const filePath = folderPath
-      ? `${folderPath}/${Date.now()}-${file.name}`
+  async uploadFile(file) {
+    const filePath = this.selectedFolder
+      ? `${this.selectedFolder}/${Date.now()}-${file.name}`
       : `${Date.now()}-${file.name}`
     return await supabase.storage.from(BUCKET_NAME).upload(filePath, file)
   }
@@ -165,21 +166,27 @@ class FileManager {
     uiManager.setFileInputEnabled(false)
 
     try {
-      const uploadPromises = this.uploadedFiles.map((file) =>
-        this.retryOperation(() => this.uploadFile(file))
-      )
-      const results = await Promise.allSettled(uploadPromises)
+      const uploadPromises = this.uploadedFiles.map((file) => {
+        const filePath = this.selectedFolder
+          ? `${this.selectedFolder}/${Date.now()}-${file.name}`
+          : `${Date.now()}-${file.name}`
+        return this.retryOperation(() => this.uploadFile(file, filePath))
+      })
 
+      const results = await Promise.allSettled(uploadPromises)
       const failures = results.filter((result) => result.status === 'rejected')
 
       if (failures.length > 0) {
         throw new Error(`Failed to upload ${failures.length} files`)
       }
 
+      // Clear the upload queue and update UI
       this.uploadedFiles = []
-      uiManager.updateFileList([])
+      this.updateFileListUI()
       uiManager.updateStateIcons(0, MAX_FILES)
+      uiManager.showSuccess('Files uploaded successfully')
 
+      // Refresh the file list
       window.location.href = '/files'
     } catch (error) {
       console.error('Upload failed:', error)
@@ -191,11 +198,41 @@ class FileManager {
     }
   }
 
-  removeFile(index) {
+  async removeFile(index) {
     if (index >= 0 && index < this.uploadedFiles.length) {
-      this.uploadedFiles.splice(index, 1)
-      uiManager.updateFileList(this.uploadedFiles)
-      uiManager.updateStateIcons(this.uploadedFiles.length, MAX_FILES)
+      try {
+        const fileElement = document.getElementById(`file-${index}`)
+        if (fileElement) {
+          const loader = fileElement.querySelector('.s-removeFileLoader')
+          const removeButton = fileElement.querySelector('.s-removeFile')
+
+          if (loader && removeButton) {
+            loader.style.display = 'block'
+            removeButton.style.display = 'none'
+          }
+
+          // Add animation
+          fileElement.style.opacity = '0.5'
+
+          // Simulate removal delay for better UX
+          await new Promise((resolve) => setTimeout(resolve, 500))
+
+          this.uploadedFiles.splice(index, 1)
+          this.updateFileListUI()
+
+          // If no files left, show empty placeholder
+          if (this.uploadedFiles.length === 0) {
+            const emptyPlaceholder =
+              document.getElementById('s-emptyPlaceholder')
+            if (emptyPlaceholder) {
+              emptyPlaceholder.style.display = 'block'
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error removing file:', error)
+        uiManager.showError('Failed to remove file')
+      }
     }
   }
 
@@ -339,8 +376,8 @@ class FileManager {
                          onclick="handleCopyUrl('${data.publicUrl}')">
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M7.99805 16H11.998M7.99805 11H15.998" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                        <path d="M7.5 3.5C5.9442 3.54667 5.01661 3.71984 4.37477 4.36227C3.49609 5.24177 3.49609 6.6573 3.49609 9.48836V15.9944C3.49609 18.8255 3.49609 20.241 4.37477 21.1205C5.25345 22 6.66767 22 9.49609 22H14.4961C17.3245 22 18.7387 22 19.6174 21.1205C20.4961 20.241 20.4961 18.8255 20.4961 15.9944V9.48836C20.4961 6.6573 20.4961 5.24177 19.6174 4.36228C18.9756 3.71984 18.048 3.54667 16.4922 3.5" stroke="currentColor" stroke-width="1.5"/>
-                        <path d="M7.49609 3.75C7.49609 2.7835 8.2796 2 9.24609 2H14.7461C15.7126 2 16.4961 2.7835 16.4961 3.75C16.4961 4.7165 15.7126 5.5 14.7461 5.5H9.24609C8.2796 5.5 7.49609 4.7165 7.49609 3.75Z" fill="#E4E6F1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                        <path d="M7.5 3.5C5.9442 3.54667 5.01661 3.71984 4.37477 4.36227C3.49609 5.24177 3.49609 6.6573 3.49609 9.48836V15.9944C3.49609 18.8255 3.49609 20.241 4.37477 21.1205C5.25345 22 6.66767 22 9.49609 22H14.4961C17.3245 22 18.7387 22 19.6174 21.1205C20.4961 20.241 20.4961 18.8255 20.4961 15.9944V9.48836C20.4961 6.6573 20.4961 5.24177 19.6174 4.36228C18.9756 3.71984 18.048 3.54667 16.4922 3.5" stroke="#dc3545" stroke-width="1.5"/>
+                        <path d="M7.49609 3.75C7.49609 2.7835 8.2796 2 9.24609 2H14.7461C15.7126 2 16.4961 2.7835 16.4961 3.75C16.4961 4.7165 15.7126 5.5 14.7461 5.5H9.24609C8.2796 5.5 7.49609 4.7165 7.49609 3.75Z" fill="#E4E6F1" stroke="#dc3545" stroke-width="1.5" stroke-linejoin="round"/>
                       </svg>
                     </div>
                     <div id="v-delete" class="intarective-icon delete w-embed"
@@ -411,16 +448,21 @@ class FileManager {
 
   async createFolder(folderName) {
     try {
-      // Check if folder already exists
-      const { data: existingFiles } = await supabase.storage
+      // Validate folder name
+      if (!folderName?.trim()) {
+        throw new Error('Folder name cannot be empty')
+      }
+
+      // Check for existing folder
+      const { data: existingFolder } = await supabase.storage
         .from(BUCKET_NAME)
         .list(folderName)
 
-      if (existingFiles?.length > 0) {
-        throw new Error('A folder with this name already exists')
+      if (existingFolder?.length > 0) {
+        throw new Error('Folder already exists')
       }
 
-      // Create folder marker
+      // Create folder
       const { error } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(`${folderName}/.folder`, new Blob([]))
@@ -431,11 +473,11 @@ class FileManager {
       await this.updateUI(
         document.querySelector('#file-container, .file-container')
       )
-
       uiManager.showSuccess('Folder created successfully')
     } catch (error) {
       console.error('Error creating folder:', error)
-      throw new Error(error.message || 'Failed to create folder')
+      uiManager.showError(error.message || 'Failed to create folder')
+      throw error
     }
   }
 
@@ -549,10 +591,12 @@ class FileManager {
           <div id="folder-content-${fileId}" class="folder-item-wrapper" style="display: none;">
             ${
               folderFiles.length > 0
-                ? folderFiles
-                    .map((f) => this.createFileElement(f, file.name))
-                    .join('')
-                : '<p class="paragraph">No files in folder</p>'
+                ? await Promise.all(
+                    folderFiles.map(
+                      async (f) => await this.createFileElement(f, file.name)
+                    )
+                  ).then((elements) => elements.join(''))
+                : '<p class="paragraph folder">No files in folder</p>'
             }
           </div>
         </div>
@@ -692,13 +736,20 @@ class FileManager {
   }
 
   async toggleFolder(folderId) {
-    const folderContent = document.getElementById(`folder-content-${folderId}`)
-    if (!folderContent) return
+    try {
+      const folderContent = document.getElementById(
+        `folder-content-${folderId}`
+      )
+      if (!folderContent) {
+        throw new Error('Folder content not found')
+      }
 
-    const isVisible = folderContent.style.display === 'block'
-
-    // Toggle visibility
-    folderContent.style.display = isVisible ? 'none' : 'block'
+      const isVisible = folderContent.style.display === 'block'
+      uiManager.toggleFolderVisibility(folderId, !isVisible)
+    } catch (error) {
+      console.error('Error toggling folder:', error)
+      uiManager.showError('Failed to toggle folder')
+    }
   }
 
   async getPublicUrl(path) {
@@ -863,6 +914,105 @@ class FileManager {
       console.error('Rename failed:', error)
       uiManager.showError(error.message || 'Failed to rename folder')
     }
+  }
+
+  async loadFolders() {
+    try {
+      const { data: files, error } = await supabase.storage
+        .from(BUCKET_NAME)
+        .list()
+
+      if (error) throw error
+
+      // Get unique folder names
+      const folders = files
+        .filter((file) => file.name.includes('/'))
+        .map((file) => file.name.split('/')[0])
+        .filter((value, index, self) => self.indexOf(value) === index)
+
+      // Update select field
+      const folderSelect = document.getElementById('v-folder-select')
+      if (folderSelect) {
+        // Clear existing options first
+        folderSelect.innerHTML = ''
+
+        // Add default option
+        const defaultOption = document.createElement('option')
+        defaultOption.value = ''
+        defaultOption.textContent = 'Select folder...'
+        folderSelect.appendChild(defaultOption)
+
+        // Add folder options
+        folders.forEach((folder) => {
+          const option = document.createElement('option')
+          option.value = folder
+          option.textContent = folder
+          folderSelect.appendChild(option)
+        })
+
+        // Add change event listener
+        folderSelect.addEventListener('change', (e) => {
+          this.selectedFolder = e.target.value
+        })
+      }
+    } catch (error) {
+      console.error('Error loading folders:', error)
+      uiManager.showError('Failed to load folders')
+    }
+  }
+
+  updateFileListUI() {
+    const fileList = document.getElementById('a-fileList')
+    const emptyPlaceholder = document.getElementById('s-emptyPlaceholder')
+    const templateFileItem = document.getElementById('a-fileItem')
+
+    if (!fileList) return
+
+    // Hide the template file item
+    if (templateFileItem) {
+      templateFileItem.style.display = 'none'
+    }
+
+    if (this.uploadedFiles.length === 0) {
+      if (fileList) fileList.style.display = 'none'
+      if (emptyPlaceholder) {
+        emptyPlaceholder.textContent = 'There are no files uploaded yet...'
+        emptyPlaceholder.style.display = 'block'
+      }
+      return
+    }
+
+    if (fileList) fileList.style.display = 'block'
+    if (emptyPlaceholder) emptyPlaceholder.style.display = 'none'
+
+    // Create the file list HTML
+    const fileListHTML = this.uploadedFiles
+      .map(
+        (file, index) => `
+      <div class="file-item" id="file-${index}">
+        <p class="paragraph a-fileName">${file.name}</p>
+        <div class="div-block-2">
+          <div class="html-loader is-button w-embed s-removeFileLoader" style="display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M12,1A11,11,0,1,0,23,12,11,11,0,0,0,12,1Zm0,19a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z" opacity=".25"/>
+              <path fill="currentColor" d="M10.72,19.9a8,8,0,0,1-6.5-9.79A7.77,7.77,0,0,1,10.4,4.16a8,8,0,0,1,9.49,6.52A1.54,1.54,0,0,0,21.38,12h.13a1.37,1.37,0,0,0,1.38-1.54,11,11,0,1,0-12.7,12.39A1.54,1.54,0,0,0,12,21.34h0A1.47,1.47,0,0,0,10.72,19.9Z">
+                <animateTransform attributeName="transform" dur="0.75s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/>
+              </path>
+            </svg>
+          </div>
+          <div class="icon-embed-xsmall w-embed s-removeFile" onclick="window.handleFileRemove(${index})">
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--iconoir" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 14.828L12.001 12m2.828-2.828L12.001 12m0 0L9.172 9.172M12.001 12l2.828 2.828M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2S2 6.477 2 12s4.477 10 10 10"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    `
+      )
+      .join('')
+
+    // Update the file list
+    fileList.innerHTML = fileListHTML
   }
 }
 

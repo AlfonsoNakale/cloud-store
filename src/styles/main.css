@@ -62,7 +62,6 @@
 }
 
 .folder-content::before {
-  content: '▶';
   position: absolute;
   left: 0;
   transition: transform 0.2s ease;
@@ -128,4 +127,78 @@
 
 #v-file_list {
   margin-top: 20px;
+}
+
+/* Add these styles */
+.a-file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 8px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.a-fileName {
+  margin: 0;
+  flex-grow: 1;
+}
+
+.s-removeFileLoader {
+  width: 24px;
+  height: 24px;
+}
+
+.s-removeFile {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+}
+
+.s-removeFile:hover {
+  opacity: 0.8;
+}
+
+#a-fileList {
+  margin-top: 20px;
+}
+
+.div-block-2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#a-fileItem {
+  display: none;
+}
+
+.file-item {
+  display: none;
+}
+
+.file-item.visible {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 8px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.icon-embed-xsmall {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.icon-embed-xsmall:hover {
+  opacity: 0.8;
+}
+
+.html-loader.is-button {
+  width: 24px;
+  height: 24px;
 } 
