@@ -1,5 +1,6 @@
 import { MAX_FILES, MAX_SIZE_BYTES, MAX_SIZE_MB } from './constants.js'
 import { supabase, BUCKET_NAME } from './supabaseClient.js'
+import { supabaseTables } from './supabaseTables.js'
 import { uiManager } from './uiManager.js'
 import { calculateTotalSize } from './utils.js'
 
@@ -41,14 +42,23 @@ class FileManager {
   }
 
   setupEventListeners() {
-    const fileInput = document.querySelector('#file-input')
-    const uploadButton = document.querySelector('#uploadFile')
+    // Find both file inputs
+    const fileInputs = [
+      document.querySelector('#file-input'),
+      document.querySelector('#v-file-input'),
+    ].filter(Boolean)
 
-    if (fileInput) {
-      // Add multiple attribute to allow multiple file selection
-      fileInput.setAttribute('multiple', 'true')
-      fileInput.addEventListener('change', this.handleFileSelection.bind(this))
-    }
+    fileInputs.forEach((fileInput) => {
+      if (fileInput) {
+        fileInput.setAttribute('multiple', 'true')
+        fileInput.addEventListener(
+          'change',
+          this.handleFileSelection.bind(this)
+        )
+      }
+    })
+
+    const uploadButton = document.querySelector('#uploadFile')
 
     if (uploadButton) {
       uploadButton.addEventListener('click', this.handleFileUpload.bind(this))
@@ -103,6 +113,7 @@ class FileManager {
 
     if (errors.length > 0) {
       uiManager.showError(errors.join('\n'))
+      event.target.value = ''
       return
     }
 
@@ -111,8 +122,9 @@ class FileManager {
     // Validate file count
     if (totalFiles > MAX_FILES) {
       uiManager.showError(
-        `Maximum ${MAX_FILES} files allowed. Currently selected: ${this.uploadedFiles.length}`
+        `Only  a maximum ${MAX_FILES} files allowed. Currently selected: ${totalFiles}`
       )
+      event.target.value = ''
       return
     }
 
@@ -120,15 +132,54 @@ class FileManager {
     const totalSize = calculateTotalSize([...this.uploadedFiles, ...newFiles])
     if (totalSize > MAX_SIZE_BYTES) {
       uiManager.showError(`Total size cannot exceed ${MAX_SIZE_MB}MB`)
+      event.target.value = ''
       return
     }
 
-    // Add files and update UI
-    this.uploadedFiles.push(...newFiles)
-    this.updateFileListUI()
+    // If this is the file-input element, upload files directly
+    if (event.target.id === 'file-input') {
+      try {
+        uiManager.showSuccess('Files are being uploaded...')
+        this.isUploading = true
+        uiManager.setLoading(true)
 
-    // Reset input
-    event.target.value = ''
+        const uploadPromises = newFiles.map((file) => {
+          const filePath = `${Date.now()}-${file.name}`
+          return this.uploadFile(file, filePath)
+        })
+
+        const results = await Promise.allSettled(uploadPromises)
+        const failures = results.filter(
+          (result) => result.status === 'rejected'
+        )
+
+        if (failures.length > 0) {
+          throw new Error(`Failed to upload ${failures.length} files`)
+        }
+
+        uiManager.showSuccess('Files uploaded successfully')
+
+        // Refresh the file list
+        const container = document.querySelector(
+          '#file-container, .file-container'
+        )
+        if (container) {
+          await this.updateUI(container)
+        }
+      } catch (error) {
+        console.error('Upload failed:', error)
+        uiManager.showError('Upload failed. Please try again.')
+      } finally {
+        this.isUploading = false
+        uiManager.setLoading(false)
+        event.target.value = ''
+      }
+    } else {
+      // For other file inputs, add to upload queue as before
+      this.uploadedFiles.push(...newFiles)
+      this.updateFileListUI()
+      event.target.value = ''
+    }
   }
 
   async retryOperation(operation, maxRetries = 3) {
@@ -159,17 +210,40 @@ class FileManager {
     uiManager.setFileInputEnabled(false)
 
     try {
-      const uploadPromises = this.uploadedFiles.map((file) => {
-        const filePath = this.selectedFolder
-          ? `${this.selectedFolder}/${Date.now()}-${file.name}`
-          : `${Date.now()}-${file.name}`
-        return this.retryOperation(() => this.uploadFile(file, filePath))
+      // If there's a selected folder, get its ID first
+      let selectedFolderId = null
+      if (this.selectedFolder) {
+        const { data: folderData } = await supabaseTables.createFolder(
+          this.selectedFolder
+        )
+        if (folderData) {
+          selectedFolderId = folderData.id
+        }
+      }
+
+      const uploadPromises = this.uploadedFiles.map(async (file) => {
+        try {
+          const filePath = this.selectedFolder
+            ? `${this.selectedFolder}/${Date.now()}-${file.name}`
+            : `${Date.now()}-${file.name}`
+
+          // Upload to storage and insert into database
+          const uploadResult = await this.retryOperation(() =>
+            this.uploadFile(file, filePath, selectedFolderId)
+          )
+
+          return uploadResult
+        } catch (error) {
+          console.error('Error processing file:', file.name, error)
+          throw error
+        }
       })
 
       const results = await Promise.allSettled(uploadPromises)
       const failures = results.filter((result) => result.status === 'rejected')
 
       if (failures.length > 0) {
+        console.error('Failed uploads:', failures)
         throw new Error(`Failed to upload ${failures.length} files`)
       }
 
@@ -180,7 +254,9 @@ class FileManager {
       uiManager.showSuccess('Files uploaded successfully')
 
       // Refresh the file list
-      window.location.href = '/files'
+      await this.updateUI(
+        document.querySelector('#file-container, .file-container')
+      )
     } catch (error) {
       console.error('Upload failed:', error)
       uiManager.showError('Upload failed. Please try again.')
@@ -473,27 +549,33 @@ class FileManager {
         throw new Error('Folder name cannot be empty')
       }
 
-      // Check for existing folder
-      const { data: existingFolder } = await supabase.storage
-        .from(BUCKET_NAME)
-        .list(folderName)
-
-      if (existingFolder?.length > 0) {
-        throw new Error('Folder already exists')
+      // Check for special characters
+      if (!/^[a-zA-Z0-9-_\s]+$/.test(folderName)) {
+        throw new Error(
+          'Folder name can only contain letters, numbers, spaces, hyphens, and underscores'
+        )
       }
 
-      // Create folder
-      const { error } = await supabase.storage
+      // Create folder in storage
+      const { error: storageError } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(`${folderName}/.folder`, new Blob([]))
 
-      if (error) throw error
+      if (storageError) throw storageError
+
+      // Create or get folder in database
+      const { data: folderData, error: dbError } =
+        await supabaseTables.createFolder(folderName)
+
+      if (dbError) throw dbError
 
       // Update UI
       await this.updateUI(
         document.querySelector('#file-container, .file-container')
       )
       uiManager.showSuccess('Folder created successfully')
+
+      return folderData
     } catch (error) {
       console.error('Error creating folder:', error)
       uiManager.showError(error.message || 'Failed to create folder')
@@ -1048,7 +1130,7 @@ class FileManager {
     fileList.innerHTML = fileListHTML
   }
 
-  // Update the handleFolderUpload method to work with Webflow structure
+  // Update the handleFolderUpload method
   async handleFolderUpload(folderName) {
     console.log('handleFolderUpload called for folder:', folderName)
 
@@ -1056,6 +1138,17 @@ class FileManager {
       if (!folderName) {
         throw new Error('Folder name is required')
       }
+
+      // First, ensure the folder exists in the database and get its ID
+      const { data: folderData, error: folderError } =
+        await supabaseTables.createFolder(folderName)
+      if (folderError) throw folderError
+
+      if (!folderData?.id) {
+        throw new Error('Failed to get folder ID')
+      }
+
+      const folderId = folderData.id
 
       // Create hidden file input
       const fileInput = document.createElement('input')
@@ -1080,34 +1173,22 @@ class FileManager {
           if (!event.target.files?.length) return
 
           const files = Array.from(event.target.files)
-
-          // Validate files
           const errors = files.flatMap((file) => this.validateFile(file))
           if (errors.length > 0) {
             uiManager.showError(errors.join('\n'))
             return
           }
 
-          // Show upload progress
           uiManager.setLoading(true)
           uiManager.showSuccess(
             `Uploading ${files.length} files to ${folderName}...`
           )
 
-          // Upload files with retry logic
-          const uploadPromises = files.map((file) => {
+          const uploadPromises = files.map(async (file) => {
             const filePath = `${folderName}/${Date.now()}-${file.name}`
-            return this.retryOperation(async () => {
-              const { data, error } = await supabase.storage
-                .from(BUCKET_NAME)
-                .upload(filePath, file)
-
-              if (error) throw error
-              return data
-            })
+            return this.uploadFile(file, filePath, folderId)
           })
 
-          // Wait for all uploads to complete
           const results = await Promise.allSettled(uploadPromises)
           const failures = results.filter(
             (result) => result.status === 'rejected'
@@ -1117,12 +1198,9 @@ class FileManager {
             throw new Error(`Failed to upload ${failures.length} files`)
           }
 
-          // Refresh the folder contents
-          const container = document.querySelector(
-            '#file-container, .file-container'
+          await this.updateUI(
+            document.querySelector('#file-container, .file-container')
           )
-          await this.updateUI(container)
-
           uiManager.showSuccess('Files uploaded successfully')
         } catch (error) {
           console.error('Upload failed:', error)
@@ -1157,9 +1235,10 @@ class FileManager {
   }
 
   // Update the uploadFile method with better error handling
-  async uploadFile(file, filePath) {
+  async uploadFile(file, filePath, folderId = null) {
     console.log('Starting upload for:', filePath)
     try {
+      // Upload to storage
       const { data, error } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(filePath, file)
@@ -1169,11 +1248,48 @@ class FileManager {
         throw error
       }
 
-      console.log('Upload successful:', filePath)
+      // Get the public URL
+      const { data: urlData } = await supabase.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath)
+
+      // Insert into files table
+      const fileInfo = {
+        name: file.name,
+        url: urlData.publicUrl,
+        size: file.size,
+        type: file.type,
+        folder_id: folderId,
+      }
+
+      const { error: dbError } = await supabaseTables.insertFile(fileInfo)
+      if (dbError) {
+        console.error('Database insert error:', dbError)
+        throw dbError
+      }
+
+      console.log('Upload and database insert successful:', filePath)
       return data
     } catch (error) {
-      console.error('Upload failed:', filePath, error)
-      throw new Error(`Failed to upload ${file.name}: ${error.message}`)
+      console.error('Upload or database insert failed:', filePath, error)
+      throw error
+    }
+  }
+
+  // Add a method to get folder ID by name
+  async getFolderIdByName(folderName) {
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .select('id')
+        .eq('name', folderName)
+        .single()
+
+      if (error) throw error
+      return data?.id || null
+    } catch (error) {
+      console.error('Error getting folder ID:', error)
+      return null
     }
   }
 }
