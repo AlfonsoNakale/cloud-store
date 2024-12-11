@@ -761,7 +761,7 @@ class FileManager {
   async handleCopyUrl(url) {
     try {
       await navigator.clipboard.writeText(url)
-      uiManager.showSuccess('URL copied to clipboard')
+      uiManager.showSuccess('Copied to clipboard')
     } catch (error) {
       console.error('Copy failed:', error)
       uiManager.showError('Failed to copy URL')
